@@ -14,7 +14,19 @@ from datetime import datetime
 from typing import Optional, Tuple
 import flet as ft
 
-
+@dataclass
+class ApplicantData:
+    """
+    Dataclass contract representing validated student scholarship applicant data.
+    
+    Attributes:
+        full_name (str): Full name of the applicant.
+        email (str): Institutional or standard email address.
+        gpa (float): Validated Grade Point Average between 1.00 and 5.00.
+    """
+    full_name: str
+    email: str
+    gpa: float
 # ============================================================================
 # TIER 3: DOMAIN DATA CONTRACT & CUSTOM EXCEPTIONS
 # ============================================================================
@@ -121,6 +133,7 @@ class ScholarshipValidator:
             raise GWARangeError("GWA must be between 1.00 and 5.00.")
             
         return round(gwa_float, 2)
+    
 
 
 # ============================================================================
