@@ -91,8 +91,13 @@ class ScholarshipValidator:
         Returns: Normalized student ID.
         Raises: IDFormatError if invalid.
         """
-        # TODO: Implement ID validation using cls.STUDENT_ID_REGEX
-        pass
+        clean = cls.sanitize_string(value)
+        if not clean:
+            raise IDFormatError("Student ID is required.")
+        if not cls.STUDENT_ID_REGEX.fullmatch(clean):
+            raise IDFormatError(
+        "Invalid Student ID. Expected format: YYYY-NNNN (e.g., 2024-0123).")
+        return clean
 
     @classmethod
     def validate_email(cls, value: Optional[str]) -> str:
@@ -101,8 +106,12 @@ class ScholarshipValidator:
         Returns: Lowercased, sanitized email.
         Raises: EmailDomainError if invalid.
         """
-        # TODO: Implement email validation using cls.CSPC_EMAIL_REGEX
-        pass
+        clean = cls.sanitize_string(value).lower()
+        if not clean:
+            raise EmailDomainError("Email address is required.")
+        if not cls.CSPC_EMAIL_REGEX.fullmatch(clean):
+            raise EmailDomainError("Use a valid @cspc.edu.ph institutional email address.")
+        return clean
 
     @classmethod
     def validate_phone(cls, value: Optional[str]) -> str:
@@ -111,8 +120,13 @@ class ScholarshipValidator:
         Returns: Normalized 11-digit phone string.
         Raises: ScholarshipValidationError if invalid.
         """
-        # TODO: Implement phone validation using cls.PH_PHONE_REGEX
-        pass
+        clean = cls.sanitize_string(value)
+        normalized = clean.replace(" ", "").replace("-", "")
+        if normalized.startswith("+63"):
+            normalized = "0" + normalized[3:]
+        if not cls.PH_PHONE_REGEX.fullmatch(normalized):
+            raise ScholarshipValidationError("Invalid Philippine mobile number. Use 09XXXXXXXXX or +639XXXXXXXXX.")
+        return normalized
 
     @classmethod
     def validate_gwa(cls, value: Optional[str]) -> float:
@@ -121,9 +135,14 @@ class ScholarshipValidator:
         Returns: Parsed float value.
         Raises: GWARangeError if out of bounds or non-numeric.
         """
-        # TODO: Implement defensive float parsing and range check
-        pass
-
+        clean = cls.sanitize_string(value)
+        try:
+            gwa = float(clean)
+        except (TypeError, ValueError):
+            raise GWARangeError("GWA must be a number from 1.00 to 5.00.")
+        if not 1.00 <= gwa <= 5.00:
+            raise GWARangeError("GWA must be between 1.00 and 5.00.")
+        return gwa
 
 # ============================================================================
 # TIER 1: FLET PRESENTATION LAYER
