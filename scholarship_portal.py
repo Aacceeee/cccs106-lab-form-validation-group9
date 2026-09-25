@@ -58,7 +58,6 @@ class ScholarshipApplicant:
 class ScholarshipValidator:
     """Encapsulated validation rules and regex logic for scholarship applicants."""
 
-    # Compile Regular Expressions
     NAME_REGEX = re.compile(r"^[A-Za-z\s.\-',]{2,60}$")
     STUDENT_ID_REGEX = re.compile(r"^20\d{2}-\d{4,5}$")
     CSPC_EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9_.+-]+@cspc\.edu\.ph$")
@@ -71,12 +70,6 @@ class ScholarshipValidator:
 
     @classmethod
     def validate_name(cls, value: Optional[str]) -> str:
-        """
-        Validates full name.
-        Returns: Sanitized clean name.
-        Raises: ScholarshipValidationError if invalid.
-        """
-        # TODO: Implement sanitization and pattern validation
         clean = cls.sanitize_string(value)
         if not clean:
             raise ScholarshipValidationError("Full name is required.")
@@ -86,63 +79,49 @@ class ScholarshipValidator:
 
     @classmethod
     def validate_student_id(cls, value: Optional[str]) -> str:
-        """
-        Validates CSPC student ID format (YYYY-NNNN).
-        Returns: Normalized student ID.
-        Raises: IDFormatError if invalid.
-        """
         clean = cls.sanitize_string(value)
         if not clean:
             raise IDFormatError("Student ID is required.")
-        if not cls.STUDENT_ID_REGEX.fullmatch(clean):
-            raise IDFormatError(
-        "Invalid Student ID. Expected format: YYYY-NNNN (e.g., 2024-0123).")
+        if not cls.STUDENT_ID_REGEX.match(clean):
+            raise IDFormatError("Invalid Student ID. Expected format: YYYY-NNNN (e.g., 2024-0123).")
         return clean
 
     @classmethod
     def validate_email(cls, value: Optional[str]) -> str:
-        """
-        Validates institutional CSPC email address.
-        Returns: Lowercased, sanitized email.
-        Raises: EmailDomainError if invalid.
-        """
         clean = cls.sanitize_string(value).lower()
         if not clean:
-            raise EmailDomainError("Email address is required.")
-        if not cls.CSPC_EMAIL_REGEX.fullmatch(clean):
-            raise EmailDomainError("Use a valid @cspc.edu.ph institutional email address.")
+            raise EmailDomainError("Institutional email is required.")
+        if not cls.CSPC_EMAIL_REGEX.match(clean):
+            raise EmailDomainError("Institutional email required (must end with @cspc.edu.ph).")
         return clean
 
     @classmethod
     def validate_phone(cls, value: Optional[str]) -> str:
-        """
-        Validates and standardizes Philippine mobile numbers to 09XXXXXXXXX.
-        Returns: Normalized 11-digit phone string.
-        Raises: ScholarshipValidationError if invalid.
-        """
-        clean = cls.sanitize_string(value)
-        normalized = clean.replace(" ", "").replace("-", "")
-        if normalized.startswith("+63"):
-            normalized = "0" + normalized[3:]
-        if not cls.PH_PHONE_REGEX.fullmatch(normalized):
-            raise ScholarshipValidationError("Invalid Philippine mobile number. Use 09XXXXXXXXX or +639XXXXXXXXX.")
-        return normalized
+        clean = cls.sanitize_string(value).replace(" ", "").replace("-", "")
+        if not clean:
+            raise ScholarshipValidationError("Mobile number is required.")
+        if not cls.PH_PHONE_REGEX.match(clean):
+            raise ScholarshipValidationError("Invalid mobile number. Expected: 09XXXXXXXXX or +639XXXXXXXXX.")
+        
+        if clean.startswith("+63"):
+            clean = "0" + clean[3:]
+        return clean
 
     @classmethod
     def validate_gwa(cls, value: Optional[str]) -> float:
-        """
-        Defensively parses string to float and checks 1.00 <= GWA <= 5.00.
-        Returns: Parsed float value.
-        Raises: GWARangeError if out of bounds or non-numeric.
-        """
         clean = cls.sanitize_string(value)
+        if not clean:
+            raise GWARangeError("Academic GWA is required.")
         try:
-            gwa = float(clean)
-        except (TypeError, ValueError):
-            raise GWARangeError("GWA must be a number from 1.00 to 5.00.")
-        if not 1.00 <= gwa <= 5.00:
+            gwa_float = float(clean)
+        except (ValueError, TypeError):
+            raise GWARangeError("GWA must be a valid number between 1.00 and 5.00.")
+        
+        if gwa_float < 1.00 or gwa_float > 5.00:
             raise GWARangeError("GWA must be between 1.00 and 5.00.")
-        return gwa
+            
+        return round(gwa_float, 2)
+
 
 # ============================================================================
 # TIER 1: FLET PRESENTATION LAYER
@@ -151,12 +130,11 @@ class ScholarshipValidator:
 def main(page: ft.Page):
     page.title = "CSPC Scholarship Intake Portal"
     page.window.width = 620
-    page.window.height = 780
+    page.window.height = 850
     page.window.resizable = False
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 25
 
-    # Storage for approved applications during this session
     approved_applicants: list[ScholarshipApplicant] = []
 
     # UI Controls
@@ -209,22 +187,21 @@ def main(page: ft.Page):
     )
 
     status_summary = ft.Text(
-        value="Ready to accept applications.",
+        value="Applications registered this session: 0",
         color=ft.Colors.GREY_400,
         size=13
     )
 
-    # ------------------------------------------------------------------------
-    # REAL-TIME ERROR CLEARING HANDLERS (UX ENHANCEMENT)
-    # ------------------------------------------------------------------------
+    # Column to hold card intake contracts
+    cards_list = ft.Column(spacing=10)
+
+    # Real-time error clearing
     def clear_field_error(e):
-        """Instantly clears error state when the user begins typing."""
         if e.control.error:
             e.control.error = None
             page.update()
 
     def clear_dropdown_error(e):
-        """Instantly clears dropdown error state on selection."""
         if e.control.error_text:
             e.control.error_text = None
             page.update()
@@ -236,13 +213,10 @@ def main(page: ft.Page):
     gwa_field.on_change = clear_field_error
     program_dropdown.on_change = clear_dropdown_error
 
-    # ------------------------------------------------------------------------
-    # FORM SUBMISSION & MULTI-TIER DEFENSIVE PIPELINE
-    # ------------------------------------------------------------------------
+    # Form Submission Handler
     def submit_application(e):
         has_errors = False
 
-        # Reset all error states before evaluation
         name_field.error = None
         id_field.error = None
         email_field.error = None
@@ -250,35 +224,45 @@ def main(page: ft.Page):
         gwa_field.error = None
         program_dropdown.error_text = None
 
-        # 1. Validate Name
+        clean_name = None
         try:
             clean_name = ScholarshipValidator.validate_name(name_field.value)
         except ScholarshipValidationError as err:
             name_field.error = str(err)
             has_errors = True
 
-        # 2. Validate Student ID
-        # TODO: Wrap validate_student_id in try...except and set id_field.error
         clean_id = None
+        try:
+            clean_id = ScholarshipValidator.validate_student_id(id_field.value)
+        except IDFormatError as err:
+            id_field.error = str(err)
+            has_errors = True
 
-        # 3. Validate Email
-        # TODO: Wrap validate_email in try...except and set email_field.error
         clean_email = None
+        try:
+            clean_email = ScholarshipValidator.validate_email(email_field.value)
+        except EmailDomainError as err:
+            email_field.error = str(err)
+            has_errors = True
 
-        # 4. Validate Phone
-        # TODO: Wrap validate_phone in try...except and set phone_field.error
         clean_phone = None
+        try:
+            clean_phone = ScholarshipValidator.validate_phone(phone_field.value)
+        except ScholarshipValidationError as err:
+            phone_field.error = str(err)
+            has_errors = True
 
-        # 5. Validate GWA
-        # TODO: Wrap validate_gwa in try...except and set gwa_field.error
         clean_gwa = None
+        try:
+            clean_gwa = ScholarshipValidator.validate_gwa(gwa_field.value)
+        except GWARangeError as err:
+            gwa_field.error = str(err)
+            has_errors = True
 
-        # 6. Validate Program Selection
         if not program_dropdown.value:
             program_dropdown.error_text = "Please select an accredited scholarship program."
             has_errors = True
 
-        # If any validation errors occurred, abort and notify
         if has_errors:
             page.show_dialog(
                 ft.SnackBar(
@@ -290,14 +274,73 @@ def main(page: ft.Page):
             page.update()
             return
 
-        # 7. All Validations Passed: Instantiate Domain Contract
-        # TODO: Construct ScholarshipApplicant dataclass object
-        # TODO: Append to approved_applicants list
-        # TODO: Display green success SnackBar and reset form fields
+        # Instantiate Domain Contract Dataclass
+        applicant = ScholarshipApplicant(
+            full_name=clean_name,
+            student_id=clean_id,
+            email=clean_email,
+            phone=clean_phone,
+            gwa=clean_gwa,
+            program=program_dropdown.value
+        )
+        approved_applicants.append(applicant)
+
+        # Create intake card widget matching Figure 2
+        card = ft.Container(
+            content=ft.Row(
+                controls=[
+                    ft.Icon(ft.Icons.VERIFIED, color=ft.Colors.GREEN_400, size=24),
+                    ft.Column(
+                        controls=[
+                            ft.Text(
+                                f"{applicant.full_name} ({applicant.student_id})",
+                                weight=ft.FontWeight.BOLD,
+                                size=14
+                            ),
+                            ft.Text(
+                                f"{applicant.program} • GWA: {applicant.gwa:.2f} • {applicant.email}",
+                                size=11,
+                                color=ft.Colors.GREY_400
+                            )
+                        ],
+                        spacing=2,
+                        expand=True
+                    ),
+                    ft.Text(
+                        applicant.submitted_at.strftime("%H:%M:%S"),
+                        size=11,
+                        color=ft.Colors.GREY_500
+                    )
+                ],
+                alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+            ),
+            bgcolor=ft.Colors.GREY_900,
+            padding=12,
+            border_radius=8,
+            border=ft.Border.all(1, ft.Colors.GREY_800)
+        )
+        cards_list.controls.insert(0, card)
+
+        # Reset UI
+        name_field.value = ""
+        id_field.value = ""
+        email_field.value = ""
+        phone_field.value = ""
+        gwa_field.value = ""
+        program_dropdown.value = None
+
+        status_summary.value = f"Applications registered this session: {len(approved_applicants)}"
+
+        page.show_dialog(
+            ft.SnackBar(
+                content=ft.Text(f"Application accepted for {clean_name}!"),
+                bgcolor=ft.Colors.GREEN_700,
+                behavior=ft.SnackBarBehavior.FLOATING
+            )
+        )
 
         page.update()
 
-    # Layout Assembly
     submit_button = ft.FilledButton(
         content=ft.Row(
             controls=[
@@ -339,9 +382,27 @@ def main(page: ft.Page):
                 ft.Container(height=10),
                 submit_button,
                 ft.Container(height=5),
-                status_summary
+                status_summary,
+                ft.Divider(height=15, color=ft.Colors.OUTLINE_VARIANT),
+                ft.Row(
+                    controls=[
+                        ft.Icon(ft.Icons.HISTORY, size=18, color=ft.Colors.GREY_400),
+                        ft.Text(
+                            "Recent Session Intake Contracts (In-Memory Pre-Persistence)",
+                            size=13,
+                            weight=ft.FontWeight.BOLD,
+                            color=ft.Colors.GREY_300
+                        )
+                    ],
+                    spacing=6
+                ),
+                cards_list
             ],
             spacing=14,
             scroll=ft.ScrollMode.AUTO
         )
     )
+
+
+if __name__ == "__main__":
+    ft.run(main)
